@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer Scavenger Tambola — Register</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<img src="assets/logo-mark.png" class="watermark wm-1" alt="">
+<img src="assets/logo-mark.png" class="watermark wm-2" alt="">
+
+<div class="wrap">
+  <div class="topbar">
+    <img src="assets/logo-mark.png" alt="Transformance">
+    <div>
+      <div class="event-name">Transformer Scavenger Tambola</div>
+      <div class="event-sub">Transformance · L&D Convention</div>
+    </div>
+  </div>
+
+  <div class="card" id="regCard">
+    <h2 style="margin-top:0;">Register to play</h2>
+    <p style="color:#8a8375; font-size:14px; margin-top:-8px;">Get your unique ticket. Numbers are hidden around the venue — go find them!</p>
+
+    <label>Full name</label>
+    <input type="text" id="name" placeholder="Your name" autocomplete="off">
+
+    <label>Employee code</label>
+    <input type="text" id="empCode" placeholder="e.g. RRL10234" autocomplete="off">
+
+    <label>Business unit</label>
+    <input type="text" id="businessUnit" placeholder="e.g. Hamleys, Trends, Digital" autocomplete="off">
+
+    <button class="btn btn-primary" id="registerBtn">Get my ticket</button>
+    <p id="errMsg" style="color:#EA4630; font-size:13px; margin-top:10px; display:none;"></p>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Who's in</div>
+    <div class="lobby-list" id="lobbyList">
+      <div class="empty-state">No one's registered yet — be the first!</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+<script>
+async function loadLobby(){
+  const { data, error } = await sb.from('players').select('name, business_unit').order('registered_at', { ascending: true });
+  const el = document.getElementById('lobbyList');
+  if(error || !data || data.length === 0){
+    el.innerHTML = '<div class="empty-state">No one\'s registered yet — be the first!</div>';
+    return;
+  }
+  el.innerHTML = data.map(p => `<div class="lobby-item"><span>${p.name}</span><span style="color:#8a8375;">${p.business_unit}</span></div>`).join('');
+}
+loadLobby();
+sb.channel('lobby-index')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'players' }, loadLobby)
+  .subscribe();
+
+document.getElementById('registerBtn').addEventListener('click', async () => {
+  const name = document.getElementById('name').value.trim();
+  const empCode = document.getElementById('empCode').value.trim();
+  const businessUnit = document.getElementById('businessUnit').value.trim();
+  const errEl = document.getElementById('errMsg');
+  errEl.style.display = 'none';
+
+  if(!name || !empCode || !businessUnit){
+    errEl.textContent = 'Please fill in all fields.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true;
+  btn.textContent = 'Registering...';
+
+  // Check if employee code already registered
+  const { data: existing } = await sb.from('players').select('id').eq('employee_code', empCode).maybeSingle();
+  if(existing){
+    localStorage.setItem('tambola_player_id', existing.id);
+    window.location.href = 'ticket.html';
+    return;
+  }
+
+  const flat = generateTicketGrid();
+  const numbers = ticketToNumberArray(flat);
+
+  const { data, error } = await sb.from('players').insert({
+    name, employee_code: empCode, business_unit: businessUnit,
+    ticket_numbers: numbers, ticket_grid: flat
+  }).select().single();
+
+  if(error){
+    errEl.textContent = 'Something went wrong. Please try again.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Get my ticket';
+    return;
+  }
+
+  localStorage.setItem('tambola_player_id', data.id);
+  localStorage.setItem('tambola_ticket_flat', JSON.stringify(flat));
+  window.location.href = 'ticket.html';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Ticket — Transformer Scavenger Tambola</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<img src="assets/logo-mark.png" class="watermark wm-1" alt="">
+<img src="assets/logo-mark.png" class="watermark wm-2" alt="">
+
+<div class="wrap">
+  <div class="topbar">
+    <img src="assets/logo-mark.png" alt="Transformance">
+    <div>
+      <div class="event-name">Transformer Scavenger Tambola</div>
+      <div class="event-sub" id="playerNameLabel">—</div>
+    </div>
+  </div>
+
+  <div class="card" id="statusCard">
+    <span class="pill" id="statusPill">Waiting for game to start</span>
+    <div class="timer" id="gameTimer" style="margin-top:12px;">30:00</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">My ticket</div>
+    <div class="ticket-grid" id="ticketGrid"></div>
+  </div>
+
+  <div class="card" id="claimCard">
+    <div class="section-title">Claim a prize</div>
+    <div id="categoryList"></div>
+  </div>
+
+  <div class="card" id="activeClaimCard" style="display:none;">
+    <div class="section-title">Your claim is active</div>
+    <p style="font-size:14px; margin:6px 0 10px;">Rush to the admin desk with <span id="activeClaimCategory"></span> now!</p>
+    <div class="timer" id="claimTimer">02:00</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Live feed</div>
+    <div class="lobby-list" id="feedList">
+      <div class="empty-state">No wins yet — the hunt is on!</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+<script>
+const playerId = localStorage.getItem('tambola_player_id');
+if(!playerId){ window.location.href = 'index.html'; }
+
+let player = null;
+let gameState = null;
+let prizes = {};
+let myClaims = [];
+let claimTimerInterval = null;
+let gameTimerInterval = null;
+
+async function loadPlayer(){
+  const { data } = await sb.from('players').select('*').eq('id', playerId).single();
+  if(!data){ window.location.href = 'index.html'; return; }
+  player = data;
+  document.getElementById('playerNameLabel').textContent = `${player.name} · ${player.business_unit}`;
+  renderTicketGrid(document.getElementById('ticketGrid'), player.ticket_grid);
+}
+
+async function loadGameState(){
+  const { data } = await sb.from('game_state').select('*').eq('id', 1).single();
+  gameState = data;
+  updateStatusUI();
+}
+
+function updateStatusUI(){
+  const pill = document.getElementById('statusPill');
+  if(!gameState) return;
+  if(gameState.status === 'lobby'){
+    pill.textContent = 'Waiting for game to start';
+    pill.className = 'pill';
+  } else if(gameState.status === 'live'){
+    pill.textContent = 'Game live — go find your numbers!';
+    pill.className = 'pill pill-live';
+  } else {
+    pill.textContent = 'Game ended';
+    pill.className = 'pill';
+  }
+  startGameTimerLoop();
+  renderCategories();
+}
+
+function startGameTimerLoop(){
+  clearInterval(gameTimerInterval);
+  const timerEl = document.getElementById('gameTimer');
+  if(gameState.status !== 'live' || !gameState.started_at){
+    timerEl.textContent = fmtTime(gameState.duration_seconds || 1800);
+    return;
+  }
+  const endTime = new Date(gameState.started_at).getTime() + (gameState.duration_seconds*1000);
+  gameTimerInterval = setInterval(() => {
+    const remaining = Math.floor((endTime - Date.now())/1000);
+    timerEl.textContent = fmtTime(remaining);
+    timerEl.classList.toggle('urgent', remaining <= 60 && remaining > 0);
+    if(remaining <= 0){ clearInterval(gameTimerInterval); timerEl.textContent = '00:00'; }
+  }, 1000);
+}
+
+async function loadPrizes(){
+  const { data } = await sb.from('prizes').select('*');
+  prizes = {};
+  (data||[]).forEach(p => prizes[p.category] = p);
+  renderCategories();
+}
+
+async function loadMyClaims(){
+  const { data } = await sb.from('claims').select('*').eq('player_id', playerId).order('claimed_at', {ascending:false});
+  myClaims = data || [];
+  renderCategories();
+  renderActiveClaimBanner();
+}
+
+function renderCategories(){
+  const list = document.getElementById('categoryList');
+  list.innerHTML = CATEGORY_ORDER.map(cat => {
+    const prize = prizes[cat];
+    const won = prize && prize.won_by_player_id;
+    const myPending = myClaims.find(c => c.category === cat && c.status === 'pending' && !isClaimExpiredLocal(c));
+    let statusText = 'Open';
+    let statusClass = '';
+    let btnHtml = '';
+
+    if(won){
+      statusText = won === playerId ? '✓ You won this!' : 'Claimed';
+      statusClass = 'won';
+      btnHtml = `<button class="claim-btn" disabled>Closed</button>`;
+    } else if(myPending){
+      statusText = 'Your claim is pending';
+      btnHtml = `<button class="claim-btn claimed" disabled>Pending</button>`;
+    } else if(gameState && gameState.status === 'live'){
+      btnHtml = `<button class="claim-btn" onclick="submitClaim('${cat}')">Claim</button>`;
+    } else {
+      btnHtml = `<button class="claim-btn" disabled>Not started</button>`;
+    }
+
+    return `<div class="category-row">
+      <div>
+        <div class="category-name">${CATEGORY_LABELS[cat]}</div>
+        <div class="category-status ${statusClass}">${statusText}</div>
+      </div>
+      ${btnHtml}
+    </div>`;
+  }).join('');
+}
+
+function isClaimExpiredLocal(c){
+  const elapsed = (Date.now() - new Date(c.claimed_at).getTime())/1000;
+  return elapsed > CLAIM_WINDOW_SECONDS;
+}
+
+async function submitClaim(category){
+  if(!confirm(`Claim ${CATEGORY_LABELS[category]}? You'll have 2 minutes to reach the admin desk.`)) return;
+  const { error } = await sb.from('claims').insert({ player_id: playerId, category, status: 'pending' });
+  if(error){ showToast('Could not submit claim — try again.'); return; }
+  showToast(`${CATEGORY_LABELS[category]} claimed! Rush to admin now.`);
+  await loadMyClaims();
+}
+
+function renderActiveClaimBanner(){
+  const active = myClaims.find(c => c.status === 'pending' && !isClaimExpiredLocal(c));
+  const card = document.getElementById('activeClaimCard');
+  clearInterval(claimTimerInterval);
+  if(!active){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  document.getElementById('activeClaimCategory').textContent = CATEGORY_LABELS[active.category];
+  const endTime = new Date(active.claimed_at).getTime() + CLAIM_WINDOW_SECONDS*1000;
+  const timerEl = document.getElementById('claimTimer');
+  claimTimerInterval = setInterval(() => {
+    const remaining = Math.floor((endTime - Date.now())/1000);
+    timerEl.textContent = fmtTime(remaining);
+    timerEl.classList.toggle('urgent', remaining <= 30 && remaining > 0);
+    if(remaining <= 0){
+      clearInterval(claimTimerInterval);
+      card.style.display = 'none';
+      loadMyClaims();
+    }
+  }, 1000);
+}
+
+async function loadFeed(){
+  const { data } = await sb.from('prizes').select('category, label, won_at, players(name)').not('won_at', 'is', null).order('won_at', {ascending:false});
+  const el = document.getElementById('feedList');
+  if(!data || data.length === 0){
+    el.innerHTML = '<div class="empty-state">No wins yet — the hunt is on!</div>';
+    return;
+  }
+  el.innerHTML = data.map(p => `<div class="lobby-item"><span>🦋 ${p.players?.name || 'Someone'} won <b>${p.label}</b></span></div>`).join('');
+}
+
+function subscribeRealtime(){
+  sb.channel('ticket-view')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_state' }, () => { loadGameState(); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prizes' }, (payload) => {
+      loadPrizes(); loadFeed();
+      if(payload.new.won_by_player_id === playerId){
+        showToast(`🎉 Certified! You won ${CATEGORY_LABELS[payload.new.category]}!`);
+      }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'claims', filter: `player_id=eq.${playerId}` }, (payload) => {
+      if(payload.new.status === 'rejected'){ showToast(`Your ${CATEGORY_LABELS[payload.new.category]} claim was rejected — keep hunting!`); }
+      loadMyClaims();
+    })
+    .subscribe();
+}
+
+(async function init(){
+  await loadPlayer();
+  await loadGameState();
+  await loadPrizes();
+  await loadMyClaims();
+  await loadFeed();
+  subscribeRealtime();
+})();
+</script>
+</body>
+</html>

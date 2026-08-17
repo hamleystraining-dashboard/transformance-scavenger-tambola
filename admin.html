@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Transformer Scavenger Tambola</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .wrap{ max-width:760px; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:600px){ .grid2{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<img src="assets/logo-mark.png" class="watermark wm-1" alt="">
+<img src="assets/logo-mark.png" class="watermark wm-2" alt="">
+
+<div class="wrap">
+  <div class="topbar">
+    <img src="assets/logo-mark.png" alt="Transformance">
+    <div>
+      <div class="event-name">Admin Console</div>
+      <div class="event-sub">Transformer Scavenger Tambola</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <span class="pill" id="statusPill">Lobby</span>
+      <div class="timer" id="gameTimer" style="font-size:24px;">30:00</div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:14px;">
+      <button class="btn btn-primary" id="startBtn">Start game</button>
+      <button class="btn btn-outline" id="endBtn">End game</button>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="section-title">Pending claims (oldest first)</div>
+      <div id="claimsList"><div class="empty-state">No pending claims</div></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Prizes</div>
+      <div id="prizesList"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Registered players (<span id="playerCount">0</span>)</div>
+    <div class="lobby-list" id="rosterList"><div class="empty-state">No one registered yet</div></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+<script>
+let gameState = null;
+let gameTimerInterval = null;
+
+async function loadGameState(){
+  const { data } = await sb.from('game_state').select('*').eq('id',1).single();
+  gameState = data;
+  document.getElementById('statusPill').textContent =
+    gameState.status === 'lobby' ? 'Lobby' : gameState.status === 'live' ? 'Live' : 'Ended';
+  document.getElementById('statusPill').className = 'pill' + (gameState.status === 'live' ? ' pill-live' : '');
+  document.getElementById('startBtn').disabled = gameState.status !== 'lobby';
+  startTimerLoop();
+}
+
+function startTimerLoop(){
+  clearInterval(gameTimerInterval);
+  const timerEl = document.getElementById('gameTimer');
+  if(gameState.status !== 'live' || !gameState.started_at){
+    timerEl.textContent = fmtTime(gameState.duration_seconds || 1800);
+    return;
+  }
+  const endTime = new Date(gameState.started_at).getTime() + gameState.duration_seconds*1000;
+  gameTimerInterval = setInterval(() => {
+    const remaining = Math.floor((endTime - Date.now())/1000);
+    timerEl.textContent = fmtTime(remaining);
+    if(remaining <= 0) clearInterval(gameTimerInterval);
+  }, 1000);
+}
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  if(!confirm('Start the game for everyone now?')) return;
+  await sb.from('game_state').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', 1);
+});
+document.getElementById('endBtn').addEventListener('click', async () => {
+  if(!confirm('End the game now? This cannot be undone.')) return;
+  await sb.from('game_state').update({ status: 'ended' }).eq('id', 1);
+});
+
+async function loadClaims(){
+  const { data } = await sb
+    .from('claims')
+    .select('*, players(name, business_unit)')
+    .eq('status', 'pending')
+    .order('claimed_at', { ascending: true });
+
+  const list = document.getElementById('claimsList');
+  if(!data || data.length === 0){
+    list.innerHTML = '<div class="empty-state">No pending claims</div>';
+    return;
+  }
+
+  // group by category, only show the oldest actionable claim per category as "next up"
+  const byCategory = {};
+  data.forEach(c => { if(!byCategory[c.category]) byCategory[c.category] = []; byCategory[c.category].push(c); });
+
+  let html = '';
+  Object.keys(byCategory).forEach(cat => {
+    byCategory[cat].forEach((c, idx) => {
+      const elapsed = (Date.now() - new Date(c.claimed_at).getTime())/1000;
+      const expired = elapsed > CLAIM_WINDOW_SECONDS;
+      const isNext = idx === 0;
+      html += `<div class="claim-queue-item" style="opacity:${isNext ? 1 : 0.55};">
+        <div>
+          <div style="font-weight:700; font-size:14px;">${c.players?.name || '—'} <span style="font-weight:500; color:#8a8375;">· ${CATEGORY_LABELS[cat]}</span></div>
+          <div class="claim-meta">${c.players?.business_unit || ''} · claimed ${Math.floor(elapsed)}s ago ${!isNext ? '· waiting behind earlier claim' : ''}</div>
+          ${expired ? '<div class="expired-tag">Window expired — will auto-expire</div>' : ''}
+        </div>
+        <div class="claim-actions">
+          ${isNext ? `
+            <button class="btn btn-approve btn-sm" onclick="resolveClaim('${c.id}','certified','${cat}','${c.player_id}')">Approve</button>
+            <button class="btn btn-reject btn-sm" onclick="resolveClaim('${c.id}','rejected','${cat}','${c.player_id}')">Reject</button>
+          ` : ''}
+        </div>
+      </div>`;
+    });
+  });
+  list.innerHTML = html;
+}
+
+async function resolveClaim(claimId, decision, category, playerId){
+  await sb.from('claims').update({ status: decision, resolved_at: new Date().toISOString() }).eq('id', claimId);
+  if(decision === 'certified'){
+    await sb.from('prizes').update({ won_by_player_id: playerId, won_at: new Date().toISOString() }).eq('category', category);
+    // auto-expire all other pending claims for this category
+    await sb.from('claims').update({ status: 'expired' }).eq('category', category).eq('status', 'pending');
+  }
+  loadClaims();
+  loadPrizes();
+}
+
+async function loadPrizes(){
+  const { data } = await sb.from('prizes').select('*, players(name)');
+  const list = document.getElementById('prizesList');
+  list.innerHTML = (data||[]).map(p => `
+    <div class="category-row">
+      <div class="category-name">${p.label}</div>
+      <div class="category-status ${p.won_by_player_id ? 'won' : ''}">${p.won_by_player_id ? p.players?.name : 'Open'}</div>
+    </div>
+  `).join('');
+}
+
+async function loadRoster(){
+  const { data } = await sb.from('players').select('name, business_unit').order('registered_at', {ascending:true});
+  document.getElementById('playerCount').textContent = data ? data.length : 0;
+  const el = document.getElementById('rosterList');
+  if(!data || data.length === 0){ el.innerHTML = '<div class="empty-state">No one registered yet</div>'; return; }
+  el.innerHTML = data.map(p => `<div class="lobby-item"><span>${p.name}</span><span style="color:#8a8375;">${p.business_unit}</span></div>`).join('');
+}
+
+function subscribeRealtime(){
+  sb.channel('admin-view')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'claims' }, loadClaims)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, loadRoster)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'game_state' }, loadGameState)
+    .subscribe();
+}
+
+setInterval(loadClaims, 5000); // refresh elapsed-time labels & catch expiries
+
+(async function init(){
+  await loadGameState();
+  await loadClaims();
+  await loadPrizes();
+  await loadRoster();
+  subscribeRealtime();
+})();
+</script>
+</body>
+</html>
