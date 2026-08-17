@@ -13,10 +13,11 @@
 <div class="wrap">
   <div class="topbar">
     <img src="assets/logo-mark.png" alt="Transformance">
-    <div>
+    <div style="flex:1;">
       <div class="event-name">Transformer Scavenger Tambola</div>
       <div class="event-sub" id="playerNameLabel">—</div>
     </div>
+    <div class="game-code" id="gameCodeBadge"><div><div class="gc-label">Game</div><span id="gameCodeText">—</span></div></div>
   </div>
 
   <div class="card" id="statusCard">
@@ -46,6 +47,10 @@
       <div class="empty-state">No wins yet — the hunt is on!</div>
     </div>
   </div>
+
+  <div style="text-align:center; margin-top:6px;">
+    <button class="link-btn" id="leaveBtn">Not you, or joining a new game? Leave</button>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -63,16 +68,39 @@ let gameTimerInterval = null;
 
 async function loadPlayer(){
   const { data } = await sb.from('players').select('*').eq('id', playerId).single();
-  if(!data){ window.location.href = 'index.html'; return; }
+  if(!data){ leaveGame(); return; }
   player = data;
   document.getElementById('playerNameLabel').textContent = `${player.name} · ${player.business_unit}`;
   const shortId = player.id.replace(/-/g,'').slice(0,6).toUpperCase();
   renderTicketGrid(document.getElementById('ticketGrid'), player.ticket_grid, shortId);
 }
 
+function leaveGame(){
+  localStorage.removeItem('tambola_player_id');
+  localStorage.removeItem('tambola_ticket_flat');
+  window.location.href = 'index.html';
+}
+document.getElementById('leaveBtn').addEventListener('click', () => {
+  if(confirm('Leave this game? You can register again anytime.')) leaveGame();
+});
+
 async function loadGameState(){
   const { data } = await sb.from('game_state').select('*').eq('id', 1).single();
   gameState = data;
+
+  const badge = document.getElementById('gameCodeBadge');
+  if(gameState && gameState.game_code){
+    document.getElementById('gameCodeText').textContent = gameState.game_code;
+  }
+
+  // If admin has started a NEW game round since this player registered, prompt them to leave/rejoin
+  if(player && gameState && gameState.game_code && player.game_code && player.game_code !== gameState.game_code){
+    if(confirm('A new game round has started. Leave and register for the new game?')){
+      leaveGame();
+      return;
+    }
+  }
+
   updateStatusUI();
 }
 

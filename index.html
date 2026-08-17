@@ -20,8 +20,13 @@
   </div>
 
   <div class="card" id="regCard">
-    <h2 style="margin-top:0;">Register to play</h2>
-    <p style="color:#8a8375; font-size:14px; margin-top:-8px;">Get your unique ticket. Numbers are hidden around the venue — go find them!</p>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px;">
+      <h2 style="margin:0;">Register to play</h2>
+      <div class="game-code" id="gameCodeBadge" style="display:none;">
+        <div><div class="gc-label">Game</div><span id="gameCodeText">—</span></div>
+      </div>
+    </div>
+    <p style="color:#8a8375; font-size:14px; margin-top:0;">Get your unique ticket. Numbers are hidden around the venue — go find them!</p>
 
     <label>Full name</label>
     <input type="text" id="name" placeholder="Your name" autocomplete="off">
@@ -47,8 +52,22 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="app.js"></script>
 <script>
+let currentGameCode = null;
+
+async function loadGameCode(){
+  const { data } = await sb.from('game_state').select('game_code').eq('id',1).single();
+  currentGameCode = data ? data.game_code : null;
+  const badge = document.getElementById('gameCodeBadge');
+  if(currentGameCode){
+    badge.style.display = 'inline-flex';
+    document.getElementById('gameCodeText').textContent = currentGameCode;
+  }
+}
+loadGameCode().then(loadLobby);
+
 async function loadLobby(){
-  const { data, error } = await sb.from('players').select('name, business_unit').order('registered_at', { ascending: true });
+  if(!currentGameCode) return;
+  const { data, error } = await sb.from('players').select('name, business_unit').eq('game_code', currentGameCode).order('registered_at', { ascending: true });
   const el = document.getElementById('lobbyList');
   if(error || !data || data.length === 0){
     el.innerHTML = '<div class="empty-state">No one\'s registered yet — be the first!</div>';
@@ -56,7 +75,6 @@ async function loadLobby(){
   }
   el.innerHTML = data.map(p => `<div class="lobby-item"><span>${p.name}</span><span style="color:#8a8375;">${p.business_unit}</span></div>`).join('');
 }
-loadLobby();
 sb.channel('lobby-index')
   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'players' }, loadLobby)
   .subscribe();
@@ -74,31 +92,38 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
     return;
   }
 
+  if(!currentGameCode){ await loadGameCode(); }
+  if(!currentGameCode){
+    errEl.textContent = 'No active game found yet. Please wait for the admin to open registration.';
+    errEl.style.display = 'block';
+    return;
+  }
+
   const btn = document.getElementById('registerBtn');
   btn.disabled = true;
   btn.textContent = 'Registering...';
 
-  // Check if employee code already registered
-  const { data: existing } = await sb.from('players').select('id').eq('employee_code', empCode).maybeSingle();
+  // Check if this employee code already registered for the CURRENT game round
+  const { data: existing } = await sb.from('players').select('id, game_code').eq('employee_code', empCode).eq('game_code', currentGameCode).maybeSingle();
   if(existing){
     localStorage.setItem('tambola_player_id', existing.id);
     window.location.href = 'ticket.html';
     return;
   }
 
-  // Generate a ticket and verify it's not already in use by anyone (true uniqueness, not just probabilistic)
+  // Generate a ticket and verify it's not already in use by anyone THIS round (true uniqueness, not just probabilistic)
   let flat, numbers, isDuplicate = true, tries = 0;
   do {
     flat = generateTicketGrid();
     numbers = ticketToNumberArray(flat);
-    const { data: clash } = await sb.from('players').select('id').contains('ticket_numbers', numbers).limit(1);
+    const { data: clash } = await sb.from('players').select('id').eq('game_code', currentGameCode).contains('ticket_numbers', numbers).limit(1);
     isDuplicate = clash && clash.length > 0;
     tries++;
   } while(isDuplicate && tries < 10);
 
   const { data, error } = await sb.from('players').insert({
     name, employee_code: empCode, business_unit: businessUnit,
-    ticket_numbers: numbers, ticket_grid: flat
+    ticket_numbers: numbers, ticket_grid: flat, game_code: currentGameCode
   }).select().single();
 
   if(error){
