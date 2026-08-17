@@ -147,40 +147,48 @@ label{ font-size:12px; font-weight:700; color:var(--teal); text-transform:upperc
 @keyframes shake{ 0%,100%{transform:translateX(0);} 25%{transform:translateX(-2px);} 75%{transform:translateX(2px);} }
 
 .ticket{
-  border:3px solid var(--ink);
-  border-radius:10px;
-  padding:10px;
+  border:none;
+  border-radius:16px;
+  padding:0;
   background:#fff;
   margin:6px 0 16px;
-  box-shadow:0 4px 0 var(--ink);
+  box-shadow:var(--shadow);
+  overflow:hidden;
 }
 .ticket-header{
   display:flex;
   justify-content:space-between;
-  align-items:baseline;
-  padding:2px 4px 8px;
-  border-bottom:2px dashed var(--line);
-  margin-bottom:8px;
+  align-items:center;
+  padding:14px 16px;
+  background:var(--grad-wing);
+  margin-bottom:0;
+  border-bottom:none;
 }
 .ticket-header .tno{
   font-family:'Space Grotesk',sans-serif;
   font-weight:700;
-  font-size:12px;
+  font-size:13px;
   letter-spacing:0.03em;
-  color:var(--ink);
+  color:#fff;
 }
 .ticket-header .tbrand{
-  font-size:10px;
+  font-size:9.5px;
   font-weight:700;
-  color:var(--teal);
+  color:rgba(255,255,255,0.85);
   text-transform:uppercase;
-  letter-spacing:0.06em;
+  letter-spacing:0.07em;
+  text-align:right;
 }
-.ticket-grid{
+.ticket-body{
+  padding:16px 14px 18px;
+}
+.ticket-row{
   display:grid;
   grid-template-columns:repeat(9,1fr);
-  gap:3px;
+  gap:6px;
+  margin-bottom:6px;
 }
+.ticket-row:last-child{ margin-bottom:0; }
 .cell{
   aspect-ratio:1;
   display:flex;
@@ -188,14 +196,14 @@ label{ font-size:12px; font-weight:700; color:var(--teal); text-transform:upperc
   justify-content:center;
   font-family:'Space Grotesk',sans-serif;
   font-weight:700;
-  font-size:13px;
-  border:1.5px solid var(--ink);
-  border-radius:4px;
-  background:linear-gradient(135deg, rgba(234,70,48,0.10), rgba(95,200,190,0.14));
+  font-size:15px;
+  border-radius:8px;
+  background:linear-gradient(150deg, #FFF3EC, #EAF8F6);
+  border:1.5px solid rgba(28,59,87,0.10);
   color:var(--ink);
 }
-.cell.empty{ background:transparent; border:1.5px solid transparent; }
-@media (max-width:380px){ .cell{ font-size:10.5px; } }
+.cell.empty{ background:repeating-linear-gradient(45deg, #F6F1E5, #F6F1E5 4px, #F0EADC 4px, #F0EADC 8px); border:1px dashed rgba(28,59,87,0.08); }
+@media (max-width:380px){ .cell{ font-size:12.5px; } .ticket-row{ gap:4px; } }
 
 .category-row{
   display:flex;
@@ -257,6 +265,37 @@ label{ font-size:12px; font-weight:700; color:var(--teal); text-transform:upperc
 }
 .claim-meta{ font-size:12px; color:#8a8375; }
 .claim-actions{ display:flex; gap:6px; }
+.game-code{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:var(--ink);
+  color:#fff;
+  padding:8px 14px;
+  border-radius:12px;
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:700;
+  font-size:14px;
+  letter-spacing:0.08em;
+}
+.game-code .gc-label{
+  font-size:9px;
+  font-weight:700;
+  color:var(--teal-light);
+  text-transform:uppercase;
+  letter-spacing:0.06em;
+}
+.link-btn{
+  background:none;
+  border:none;
+  color:var(--coral);
+  font-family:'Manrope',sans-serif;
+  font-weight:700;
+  font-size:12.5px;
+  cursor:pointer;
+  padding:4px 0;
+  text-decoration:underline;
+}
 .expired-tag{ color:var(--coral); font-size:11px; font-weight:700; }
 
 @media (max-width:380px){

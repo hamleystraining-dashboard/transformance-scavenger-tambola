@@ -103,18 +103,25 @@ function renderTicketGrid(container, flat, ticketNo){
 
   const header = document.createElement('div');
   header.className = 'ticket-header';
-  header.innerHTML = `<span class="tno">Ticket ${ticketNo ? '#' + ticketNo : ''}</span><span class="tbrand">Transformer Scavenger Tambola</span>`;
+  header.innerHTML = `<span class="tno">Ticket ${ticketNo ? '#' + ticketNo : ''}</span><span class="tbrand">Transformer<br>Scavenger Tambola</span>`;
   wrapper.appendChild(header);
 
-  const grid = document.createElement('div');
-  grid.className = 'ticket-grid';
-  flat.forEach(v => {
-    const cell = document.createElement('div');
-    cell.className = v === null ? 'cell empty' : 'cell';
-    cell.textContent = v === null ? '' : v;
-    grid.appendChild(cell);
-  });
-  wrapper.appendChild(grid);
+  const body = document.createElement('div');
+  body.className = 'ticket-body';
+
+  for(let r=0;r<3;r++){
+    const rowEl = document.createElement('div');
+    rowEl.className = 'ticket-row';
+    for(let c=0;c<9;c++){
+      const v = flat[r*9 + c];
+      const cell = document.createElement('div');
+      cell.className = v === null ? 'cell empty' : 'cell';
+      cell.textContent = v === null ? '' : v;
+      rowEl.appendChild(cell);
+    }
+    body.appendChild(rowEl);
+  }
+  wrapper.appendChild(body);
 
   container.appendChild(wrapper);
 }
