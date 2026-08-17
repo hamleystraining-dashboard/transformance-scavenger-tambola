@@ -66,7 +66,8 @@ async function loadPlayer(){
   if(!data){ window.location.href = 'index.html'; return; }
   player = data;
   document.getElementById('playerNameLabel').textContent = `${player.name} · ${player.business_unit}`;
-  renderTicketGrid(document.getElementById('ticketGrid'), player.ticket_grid);
+  const shortId = player.id.replace(/-/g,'').slice(0,6).toUpperCase();
+  renderTicketGrid(document.getElementById('ticketGrid'), player.ticket_grid, shortId);
 }
 
 async function loadGameState(){

@@ -23,61 +23,100 @@ function showToast(msg){
   setTimeout(() => t.remove(), 3300);
 }
 
-// Generates a standard 9x27 tambola ticket (3 rows x 9 cols, 5 numbers per row)
+// Generates a standard, correctly-formed 9x27 tambola ticket:
+// 3 rows x 9 cols, 5 numbers per row, 1-3 numbers per column,
+// numbers within each column strictly increasing top to bottom,
+// column ranges: 1-9, 10-19, 20-29, ..., 80-90 (last col is 80-90, 11 numbers)
 function generateTicketGrid(){
   const colRanges = [
     [1,9],[10,19],[20,29],[30,39],[40,49],[50,59],[60,69],[70,79],[80,90]
   ];
-  const colNumbers = colRanges.map(([lo,hi]) => {
-    const pool = [];
-    for(let n=lo;n<=hi;n++) pool.push(n);
-    pool.sort(() => Math.random()-0.5);
-    return pool;
-  });
 
-  // decide how many numbers each column gets across 3 rows (1-3 each, total 15)
-  let colCounts = new Array(9).fill(1);
-  let remaining = 15 - 9;
-  while(remaining > 0){
-    const c = Math.floor(Math.random()*9);
-    if(colCounts[c] < 3){ colCounts[c]++; remaining--; }
+  for(let attempt=0; attempt<50; attempt++){
+    // Step 1: decide how many numbers each column gets (1-3 each, total 15)
+    let colCounts = new Array(9).fill(1);
+    let remaining = 15 - 9;
+    let guard = 0;
+    while(remaining > 0 && guard < 500){
+      const c = Math.floor(Math.random()*9);
+      if(colCounts[c] < 3){ colCounts[c]++; remaining--; }
+      guard++;
+    }
+
+    // Step 2: decide which rows within each column get a number,
+    // constrained so every row ends up with exactly 5 numbers total
+    const rowCounts = [0,0,0];
+    const colRowAssignment = []; // colRowAssignment[c] = array of row indices (sorted)
+    let feasible = true;
+
+    // shuffle column order so the greedy row-balancing isn't biased
+    const colOrder = [0,1,2,3,4,5,6,7,8].sort(() => Math.random()-0.5);
+
+    for(const c of colOrder){
+      const need = colCounts[c];
+      // pick rows with the fewest numbers so far, to keep rows balanced at 5 each
+      const rowsByLoad = [0,1,2].sort((a,b) => rowCounts[a]-rowCounts[b] || Math.random()-0.5);
+      const chosen = rowsByLoad.slice(0, need);
+      chosen.forEach(r => rowCounts[r]++);
+      colRowAssignment[c] = chosen.sort((a,b)=>a-b);
+    }
+
+    if(!rowCounts.every(r => r === 5)) { feasible = false; }
+    if(!feasible) continue;
+
+    // Step 3: pick actual numbers per column, sorted ascending into the chosen rows
+    const grid = [
+      new Array(9).fill(null),
+      new Array(9).fill(null),
+      new Array(9).fill(null)
+    ];
+    let ok = true;
+    for(let c=0;c<9;c++){
+      const [lo,hi] = colRanges[c];
+      const pool = [];
+      for(let n=lo;n<=hi;n++) pool.push(n);
+      pool.sort(() => Math.random()-0.5);
+      const picked = pool.slice(0, colCounts[c]).sort((a,b)=>a-b);
+      if(picked.length !== colCounts[c]){ ok = false; break; }
+      colRowAssignment[c].forEach((r,i) => { grid[r][c] = picked[i]; });
+    }
+    if(!ok) continue;
+
+    const flat = [];
+    grid.forEach(row => row.forEach(v => flat.push(v)));
+    return flat; // 27-length array, null for empty cells, in row-major order
   }
 
-  const grid = [[null,null,null,null,null,null,null,null,null],
-                [null,null,null,null,null,null,null,null,null],
-                [null,null,null,null,null,null,null,null,null]];
-
-  for(let c=0;c<9;c++){
-    const rowsForCol = [0,1,2].sort(() => Math.random()-0.5).slice(0, colCounts[c]);
-    const nums = colNumbers[c].slice(0, colCounts[c]).sort((a,b)=>a-b);
-    rowsForCol.sort((a,b)=>a-b).forEach((r,i) => { grid[r][c] = nums[i]; });
-  }
-
-  // ensure each row has exactly 5 — fix rows with != 5 by rebalancing (rare edge case)
-  for(let attempt=0; attempt<20; attempt++){
-    const rowCounts = grid.map(row => row.filter(x => x!==null).length);
-    if(rowCounts.every(c => c===5)) break;
-    // rebuild if imbalanced
-    return generateTicketGrid();
-  }
-
-  const flat = [];
-  grid.forEach(row => row.forEach(v => flat.push(v)));
-  return flat; // 27-length array, null for empty cells, in row-major order
+  // extremely unlikely fallback
+  throw new Error('Could not generate a valid ticket — please try again.');
 }
 
 function ticketToNumberArray(flat){
   return flat.filter(n => n !== null);
 }
 
-function renderTicketGrid(container, flat){
+function renderTicketGrid(container, flat, ticketNo){
   container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'ticket';
+
+  const header = document.createElement('div');
+  header.className = 'ticket-header';
+  header.innerHTML = `<span class="tno">Ticket ${ticketNo ? '#' + ticketNo : ''}</span><span class="tbrand">Transformer Scavenger Tambola</span>`;
+  wrapper.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'ticket-grid';
   flat.forEach(v => {
     const cell = document.createElement('div');
     cell.className = v === null ? 'cell empty' : 'cell';
     cell.textContent = v === null ? '' : v;
-    container.appendChild(cell);
+    grid.appendChild(cell);
   });
+  wrapper.appendChild(grid);
+
+  container.appendChild(wrapper);
 }
 
 function fmtTime(sec){

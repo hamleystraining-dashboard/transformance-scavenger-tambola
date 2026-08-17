@@ -86,8 +86,15 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
     return;
   }
 
-  const flat = generateTicketGrid();
-  const numbers = ticketToNumberArray(flat);
+  // Generate a ticket and verify it's not already in use by anyone (true uniqueness, not just probabilistic)
+  let flat, numbers, isDuplicate = true, tries = 0;
+  do {
+    flat = generateTicketGrid();
+    numbers = ticketToNumberArray(flat);
+    const { data: clash } = await sb.from('players').select('id').contains('ticket_numbers', numbers).limit(1);
+    isDuplicate = clash && clash.length > 0;
+    tries++;
+  } while(isDuplicate && tries < 10);
 
   const { data, error } = await sb.from('players').insert({
     name, employee_code: empCode, business_unit: businessUnit,
