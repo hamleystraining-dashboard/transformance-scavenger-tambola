@@ -30,6 +30,7 @@
       <span class="pill" id="statusPill">Lobby</span>
       <div class="timer" id="gameTimer" style="font-size:24px;">30:00</div>
     </div>
+    <div id="nextStepBanner" style="margin-top:10px; padding:10px 12px; border-radius:10px; background:#FFF3EC; border:1.5px solid #F5A324; font-size:13px; font-weight:700; color:#1C3B57; display:none;"></div>
     <div style="display:flex; gap:10px; margin-top:14px;">
       <button class="btn btn-primary" id="startBtn">Start game</button>
       <button class="btn btn-outline" id="endBtn">End game</button>
@@ -71,7 +72,23 @@ async function loadGameState(){
   document.getElementById('statusPill').className = 'pill' + (gameState.status === 'live' ? ' pill-live' : '');
   document.getElementById('startBtn').disabled = gameState.status !== 'lobby';
   if(gameState.game_code){ document.getElementById('gameCodeText').textContent = gameState.game_code; }
+  updateNextStepBanner();
   startTimerLoop();
+}
+
+async function updateNextStepBanner(){
+  const banner = document.getElementById('nextStepBanner');
+  if(gameState.status === 'lobby'){
+    const { count } = await sb.from('players').select('*', { count: 'exact', head: true }).eq('game_code', gameState.game_code);
+    banner.style.display = 'block';
+    banner.textContent = `⚠️ Timer has NOT started yet. ${count || 0} player(s) registered for this code. Wait for everyone to join, then click "Start game" below to begin the 30-min countdown.`;
+  } else if(gameState.status === 'live'){
+    banner.style.display = 'block';
+    banner.textContent = `✅ Game is live — the 30-min timer is running for everyone right now.`;
+  } else {
+    banner.style.display = 'block';
+    banner.textContent = `Game ended. Click "Start a brand-new game" below to begin another round.`;
+  }
 }
 
 function startTimerLoop(){
@@ -111,7 +128,7 @@ document.getElementById('newGameBtn').addEventListener('click', async () => {
     status: 'lobby', started_at: null, game_code: newCode
   }).eq('id', 1);
 
-  showToast(`New game started! Code: ${newCode}`);
+  showToast(`New game started — status: Lobby. Let players register, then click "Start game" to begin the 30-min timer. Code: ${newCode}`);
   loadGameState(); loadClaims(); loadPrizes(); loadRoster();
 });
 
