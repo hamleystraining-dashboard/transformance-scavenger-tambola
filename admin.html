@@ -108,11 +108,24 @@ function startTimerLoop(){
 
 document.getElementById('startBtn').addEventListener('click', async () => {
   if(!confirm('Start the game for everyone now?')) return;
-  await sb.from('game_state').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', 1);
+  const { data, error } = await sb.from('game_state').update({ status: 'live', started_at: new Date().toISOString() }).eq('id', 1).select();
+  if(error){
+    alert('Could not start the game: ' + error.message);
+    console.error('Start game error:', error);
+    return;
+  }
+  if(!data || data.length === 0){
+    alert('Start game did not update anything — the game_state row may be missing or blocked. Check Supabase table editor.');
+    return;
+  }
+  showToast('Game is now live!');
+  loadGameState();
 });
 document.getElementById('endBtn').addEventListener('click', async () => {
   if(!confirm('End the game now? This cannot be undone.')) return;
-  await sb.from('game_state').update({ status: 'ended' }).eq('id', 1);
+  const { error } = await sb.from('game_state').update({ status: 'ended' }).eq('id', 1);
+  if(error){ alert('Could not end the game: ' + error.message); console.error(error); return; }
+  loadGameState();
 });
 
 document.getElementById('newGameBtn').addEventListener('click', async () => {
