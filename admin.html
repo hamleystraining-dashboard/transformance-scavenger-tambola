@@ -58,6 +58,16 @@
   </div>
 </div>
 
+<div id="ticketModal" style="display:none; position:fixed; inset:0; background:rgba(28,59,87,0.55); z-index:200; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:#fff; border-radius:14px; padding:20px; max-width:420px; width:100%; max-height:85vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px;" id="modalPlayerName">—</div>
+      <button onclick="closeTicketModal()" style="border:none; background:#F0EADC; border-radius:8px; width:30px; height:30px; font-size:16px; cursor:pointer;">×</button>
+    </div>
+    <div id="modalTicketContainer"></div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="app.js"></script>
 <script>
@@ -145,6 +155,21 @@ document.getElementById('newGameBtn').addEventListener('click', async () => {
   loadGameState(); loadClaims(); loadPrizes(); loadRoster();
 });
 
+async function showTicketModal(playerId){
+  const { data, error } = await sb.from('players').select('name, business_unit, ticket_grid, employee_code').eq('id', playerId).single();
+  if(error || !data){ alert('Could not load this ticket.'); return; }
+  document.getElementById('modalPlayerName').textContent = `${data.name} · ${data.business_unit} · ${data.employee_code}`;
+  const shortId = playerId.replace(/-/g,'').slice(0,6).toUpperCase();
+  renderTicketGrid(document.getElementById('modalTicketContainer'), data.ticket_grid, shortId);
+  document.getElementById('ticketModal').style.display = 'flex';
+}
+function closeTicketModal(){
+  document.getElementById('ticketModal').style.display = 'none';
+}
+document.getElementById('ticketModal').addEventListener('click', (e) => {
+  if(e.target.id === 'ticketModal') closeTicketModal();
+});
+
 async function loadClaims(){
   const { data } = await sb
     .from('claims')
@@ -176,9 +201,12 @@ async function loadClaims(){
         </div>
         <div class="claim-actions">
           ${isNext ? `
+            <button class="btn btn-sm" style="background:#1C3B57; color:#fff;" onclick="showTicketModal('${c.player_id}')">Ticket</button>
             <button class="btn btn-approve btn-sm" onclick="resolveClaim('${c.id}','certified','${cat}','${c.player_id}')">Approve</button>
             <button class="btn btn-reject btn-sm" onclick="resolveClaim('${c.id}','rejected','${cat}','${c.player_id}')">Reject</button>
-          ` : ''}
+          ` : `
+            <button class="btn btn-sm" style="background:#1C3B57; color:#fff;" onclick="showTicketModal('${c.player_id}')">Ticket</button>
+          `}
         </div>
       </div>`;
     });
@@ -209,11 +237,11 @@ async function loadPrizes(){
 }
 
 async function loadRoster(){
-  const { data } = await sb.from('players').select('name, business_unit').order('registered_at', {ascending:true});
+  const { data } = await sb.from('players').select('id, name, business_unit').order('registered_at', {ascending:true});
   document.getElementById('playerCount').textContent = data ? data.length : 0;
   const el = document.getElementById('rosterList');
   if(!data || data.length === 0){ el.innerHTML = '<div class="empty-state">No one registered yet</div>'; return; }
-  el.innerHTML = data.map(p => `<div class="lobby-item"><span>${p.name}</span><span style="color:#8a8375;">${p.business_unit}</span></div>`).join('');
+  el.innerHTML = data.map(p => `<div class="lobby-item" style="cursor:pointer;" onclick="showTicketModal('${p.id}')"><span>${p.name}</span><span style="color:#8a8375;">${p.business_unit} →</span></div>`).join('');
 }
 
 function subscribeRealtime(){
